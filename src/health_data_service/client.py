@@ -31,10 +31,8 @@ from .data_types import (
     Sample,
     TimeSeries,
 )
-from .specific_types import (
-    SleepSession,
-    Workout,
-)
+from .sleep_types import SleepSession
+from .workout_types import WORKOUT_CLASSES, Workout
 from .request_types import (
     SleepSessionsRequest,
     TimeSeriesRequest,
@@ -64,6 +62,15 @@ def _to_params(req: object) -> dict[str, str]:
     """Unstructure an attrs request to query params, dropping None values."""
     raw = cattrs.unstructure(req)
     return {k: str(v) for k, v in raw.items() if v is not None}
+
+
+def _structure_workouts(data: list[dict]) -> list[Workout]:
+    """Structure each workout into the subclass for its type, so activity-
+    specific fields (distance, pace, route_gpx, ...) are retained."""
+    return [
+        converter.structure(w, WORKOUT_CLASSES.get(w.get("workout_type"), Workout))
+        for w in data
+    ]
 
 
 class HealthDataClient:
@@ -130,7 +137,7 @@ class HealthDataClient:
     async def get_workouts(self, req: WorkoutsRequest) -> list[Workout]:
         resp = await self._http.get("/v1/workouts", params=_to_params(req))
         resp.raise_for_status()
-        return converter.structure(resp.json()["data"], list[Workout])
+        return _structure_workouts(resp.json()["data"])
 
     # ------------------------------------------------------------------
     # Provider discovery + fan-out
@@ -224,9 +231,7 @@ class HealthDataClient:
         results = await self._fan_out("/v1/workouts", _to_params(req))
         all_workouts: list[Workout] = []
         for r in results:
-            all_workouts.extend(
-                converter.structure(r.get("data", []), list[Workout])
-            )
+            all_workouts.extend(_structure_workouts(r.get("data", [])))
         all_workouts.sort(key=lambda s: s.start, reverse=True)
         if req.limit is not None:
             all_workouts = all_workouts[:req.limit]

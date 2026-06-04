@@ -86,26 +86,5 @@ class Container:
     """Groups metrics together that are derived from a single event, eg a sleep session or workout."""
     start: datetime
     end: datetime
-    # scalars:  dict[str, Any]
-    # time_series: dict[str, float]
-
-
-
-class WorkoutType(str, Enum):
-    RUNNING = "running"
-    CYCLING = "cycling"
-    SWIMMING = "swimming"
-    WALKING = "walking"
-    HIKING = "hiking"
-    STRENGTH = "strength"
-    YOGA = "yoga"
-    OTHER = "other"
-
-
-@attr.s(auto_attribs=True, frozen=True)
-class RoutePoint:
-    """A single GPS point along a workout route."""
-    timestamp: datetime
-    lat: float
-    lon: float
-    altitude: float | None = None
+    # Stable identifier for the event from its source.
+    id: str
