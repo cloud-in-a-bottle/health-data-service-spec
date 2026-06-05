@@ -8,6 +8,7 @@ Usage::
         hr = await client.get_time_series(TimeSeriesRequest(metric="heart_rate", start=...))
         sessions = await client.get_sleep_sessions(SleepSessionsRequest(start=...))
         runs = await client.get_workouts(WorkoutsRequest(workout_type="running", limit=10))
+        full = await client.get_workout(runs[0].id)  # heart-rate trace + route
 
 By default reads ``OPENHOST_ROUTER_URL`` and ``OPENHOST_APP_TOKEN`` from the
 environment (set automatically inside OpenHost containers). The service
@@ -64,13 +65,14 @@ def _to_params(req: object) -> dict[str, str]:
     return {k: str(v) for k, v in raw.items() if v is not None}
 
 
-def _structure_workouts(data: list[dict]) -> list[Workout]:
-    """Structure each workout into the subclass for its type, so activity-
+def _structure_workout(w: dict) -> Workout:
+    """Structure a workout into the subclass for its type, so activity-
     specific fields (distance, pace, route_gpx, ...) are retained."""
-    return [
-        converter.structure(w, WORKOUT_CLASSES.get(w.get("workout_type"), Workout))
-        for w in data
-    ]
+    return converter.structure(w, WORKOUT_CLASSES.get(w.get("workout_type"), Workout))
+
+
+def _structure_workouts(data: list[dict]) -> list[Workout]:
+    return [_structure_workout(w) for w in data]
 
 
 class HealthDataClient:
@@ -135,9 +137,21 @@ class HealthDataClient:
         return converter.structure(resp.json()["data"], list[SleepSession])
 
     async def get_workouts(self, req: WorkoutsRequest) -> list[Workout]:
+        """List workouts as summaries: scalar metrics only, no per-sample
+        time series or route. Use ``get_workout`` for a single workout's full
+        detail (heart-rate trace, GPS route)."""
         resp = await self._http.get("/v1/workouts", params=_to_params(req))
         resp.raise_for_status()
         return _structure_workouts(resp.json()["data"])
+
+    async def get_workout(self, workout_id: str) -> Workout | None:
+        """Fetch one workout with full detail (heart-rate samples, route GPX).
+        Returns None if the provider doesn't have it."""
+        resp = await self._http.get(f"/v1/workouts/{workout_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return _structure_workout(resp.json())
 
     # ------------------------------------------------------------------
     # Provider discovery + fan-out
@@ -236,3 +250,12 @@ class HealthDataClient:
         if req.limit is not None:
             all_workouts = all_workouts[:req.limit]
         return all_workouts
+
+    async def get_workout_merged(self, workout_id: str) -> Workout | None:
+        """Fetch one workout's full detail, querying every provider and
+        returning the first that has it (ids are provider-unique)."""
+        results = await self._fan_out(f"/v1/workouts/{workout_id}")
+        for r in results:
+            if r:
+                return _structure_workout(r)
+        return None
