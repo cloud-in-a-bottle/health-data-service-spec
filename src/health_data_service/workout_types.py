@@ -10,8 +10,9 @@ from __future__ import annotations
 from enum import Enum
 
 import attr
+import attrs
 
-from .data_types import Container, ScalarMetric
+from .data_types import Container, Sample, ScalarMetric, TimeSeries
 from .specific_types import Duration, HeartRate, HeartRateAvg, HeartRateMin
 
 
@@ -102,6 +103,56 @@ class StrokeCount(ScalarMetric[float]):
     unit: str = "count"
 
 
+@attr.s(auto_attribs=True, frozen=True)
+class PowerAvg(ScalarMetric[float]):
+    metric_id: str = "average_power"
+    display_name: str = "Avg Power"
+    unit: str = "W"
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class PowerMax(ScalarMetric[float]):
+    metric_id: str = "max_power"
+    display_name: str = "Max Power"
+    unit: str = "W"
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class CadenceAvg(ScalarMetric[float]):
+    metric_id: str = "average_cadence"
+    display_name: str = "Avg Cadence"
+    unit: str = "rpm"
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class CadenceMax(ScalarMetric[float]):
+    metric_id: str = "max_cadence"
+    display_name: str = "Max Cadence"
+    unit: str = "rpm"
+
+
+# ---------------------------------------------------------------------------
+# Workout-specific time series
+# ---------------------------------------------------------------------------
+
+@attr.s(auto_attribs=True, frozen=True)
+class Power(TimeSeries):
+    """Per-sample power output, e.g. from a cycling power meter."""
+    metric_id: str = "power"
+    display_name: str = "Power"
+    unit: str = "W"
+    samples: list[Sample[float]] = attrs.Factory(list)
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class CadenceSeries(TimeSeries):
+    """Per-sample cadence (pedal revolutions per minute)."""
+    metric_id: str = "cadence"
+    display_name: str = "Cadence"
+    unit: str = "rpm"
+    samples: list[Sample[float]] = attrs.Factory(list)
+
+
 # ---------------------------------------------------------------------------
 # Containers: Workouts
 # ---------------------------------------------------------------------------
@@ -169,9 +220,17 @@ class HikingWorkout(DistanceWorkout):
 
 @attr.s(auto_attribs=True, frozen=True, kw_only=True)
 class CyclingWorkout(DistanceWorkout):
-    """Cycling reports speed rather than pace; otherwise a typed DistanceWorkout."""
+    """Cycling reports speed rather than pace, and adds power and cadence from
+    a power meter / cadence sensor when present."""
 
     workout_type: str = WorkoutType.CYCLING
+
+    power: Power | None = None
+    average_power: PowerAvg | None = None
+    max_power: PowerMax | None = None
+    cadence: CadenceSeries | None = None
+    average_cadence: CadenceAvg | None = None
+    max_cadence: CadenceMax | None = None
 
 
 @attr.s(auto_attribs=True, frozen=True, kw_only=True)
