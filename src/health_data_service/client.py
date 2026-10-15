@@ -165,7 +165,9 @@ class HealthDataClient:
                 params={"service": SERVICE_URL},
             )
             if resp.status_code == 200:
-                return resp.json().get("providers", [])
+                data = resp.json()
+                # The router returns a bare list; older routers wrapped it as {"providers": [...]}.
+                return data if isinstance(data, list) else data.get("providers", [])
         except Exception:
             log.exception("Provider discovery failed")
         return []
