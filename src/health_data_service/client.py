@@ -34,6 +34,7 @@ from .data_types import (
 )
 from .sleep_types import SleepSession
 from .workout_types import WORKOUT_CLASSES, Workout
+from .permissions import PermissionRequiredError, raise_for_permission_required
 from .request_types import (
     SleepSessionsRequest,
     TimeSeriesRequest,
@@ -63,6 +64,17 @@ def _to_params(req: object) -> dict[str, str]:
     """Unstructure an attrs request to query params, dropping None values."""
     raw = cattrs.unstructure(req)
     return {k: str(v) for k, v in raw.items() if v is not None}
+
+
+def _check(resp: httpx.Response) -> None:
+    """Raise PermissionRequiredError for a missing grant, else raise_for_status."""
+    if resp.status_code == 403:
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        raise_for_permission_required(resp.status_code, body)
+    resp.raise_for_status()
 
 
 def _structure_workout(w: dict) -> Workout:
@@ -123,17 +135,17 @@ class HealthDataClient:
 
     async def list_metrics(self) -> list[MetricType]:
         resp = await self._http.get("/v1/metrics")
-        resp.raise_for_status()
+        _check(resp)
         return converter.structure(resp.json()["metrics"], list[MetricType])
 
     async def get_time_series(self, req: TimeSeriesRequest) -> TimeSeries:
         resp = await self._http.get("/v1/time-series", params=_to_params(req))
-        resp.raise_for_status()
+        _check(resp)
         return converter.structure(resp.json(), TimeSeries)
 
     async def get_sleep_sessions(self, req: SleepSessionsRequest) -> list[SleepSession]:
         resp = await self._http.get("/v1/sleep-sessions", params=_to_params(req))
-        resp.raise_for_status()
+        _check(resp)
         return converter.structure(resp.json()["data"], list[SleepSession])
 
     async def get_workouts(self, req: WorkoutsRequest) -> list[Workout]:
@@ -141,7 +153,7 @@ class HealthDataClient:
         time series or route. Use ``get_workout`` for a single workout's full
         detail (heart-rate trace, GPS route)."""
         resp = await self._http.get("/v1/workouts", params=_to_params(req))
-        resp.raise_for_status()
+        _check(resp)
         return _structure_workouts(resp.json()["data"])
 
     async def get_workout(self, workout_id: str) -> Workout | None:
@@ -150,7 +162,7 @@ class HealthDataClient:
         resp = await self._http.get(f"/v1/workouts/{workout_id}")
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
+        _check(resp)
         return _structure_workout(resp.json())
 
     # ------------------------------------------------------------------
@@ -175,12 +187,20 @@ class HealthDataClient:
     async def _call_provider(
         self, provider: dict, path: str, params: dict | None = None,
     ) -> dict | None:
-        """Call a specific provider, return parsed JSON or None on failure."""
+        """Call a specific provider, return parsed JSON or None on failure.
+
+        A missing grant raises PermissionRequiredError rather than being dropped like other
+        failures: grants are global, so every provider would refuse, and silently returning
+        no data would hide why."""
         headers = {"X-OpenHost-Provider": provider["app_id"]}
         try:
             resp = await self._http.get(path, params=params, headers=headers)
             if resp.status_code == 200:
                 return resp.json()
+            if resp.status_code == 403:
+                _check(resp)
+        except PermissionRequiredError:
+            raise
         except Exception:
             log.warning("Service call to %s failed", provider.get("app_name"))
         return None
@@ -192,6 +212,8 @@ class HealthDataClient:
 
         if not running:
             resp = await self._http.get(path, params=params)
+            if resp.status_code == 403:
+                _check(resp)
             return [resp.json()] if resp.status_code == 200 else []
 
         results = await asyncio.gather(

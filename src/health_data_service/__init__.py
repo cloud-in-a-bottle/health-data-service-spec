@@ -78,6 +78,7 @@ from .request_types import (
     WorkoutsRequest,
 )
 from .client import HealthDataClient
+from .permissions import READ_GRANT, PermissionRequiredError
 
 __all__ = [
     # data_types
@@ -156,4 +157,7 @@ __all__ = [
     "WorkoutsRequest",
     # client
     "HealthDataClient",
+    # permissions
+    "READ_GRANT",
+    "PermissionRequiredError",
 ]
