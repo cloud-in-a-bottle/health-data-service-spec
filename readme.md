@@ -1,4 +1,31 @@
+# health-data-service
 
+Types and client library for the Cloud in a Bottle health-data service.
+
+## Permissions
+
+The service defines one grant, `read`, which covers every endpoint (metrics, time series, sleep sessions, workouts). It is a global-scoped grant, so one approval applies to every provider. Consumers declare it in their manifest:
+
+```toml
+[[services.v2.consumes]]
+service = "github.com/imbue-openhost/health-data-service-spec"
+shortname = "health"
+version = ">=0.1.0"
+grants = ["read"]
+```
+
+Providers must refuse any service call whose `X-OpenHost-Permissions` header does not include the `read` grant, with:
+
+```json
+HTTP 403
+{"error": "permission_required", "required_grant": {"grant": "read", "scope": "global"}}
+```
+
+The router adds a `grant_url` for the owner to approve it. Requests from the owner's own browser to a provider's UI (marked by the router with `X-OpenHost-Is-Owner: true`) are not service calls and don't need the grant.
+
+`HealthDataClient` raises `PermissionRequiredError` (with `grant_url`) when a provider refuses a call, including from the `*_merged` fan-out methods, instead of returning empty results.
+
+## Design notes
 
 questions:
 - should this be quite generic, ie specifying types for the data shapes that we need, but not actually trying to enumerate all the potential metrics?
